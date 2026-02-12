@@ -22,10 +22,16 @@ source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-4. Установите ключ OpenAI (обязателен для эмбеддингов):
+4. Установите ключ и endpoint провайдера embeddings (OpenAI/RouterAI):
 
 ```bash
-export OPENAI_API_KEY="ВАШ_КЛЮЧ"  # Windows: setx OPENAI_API_KEY "ВАШ_КЛЮЧ"
+export OPENAI_API_KEY="ВАШ_КЛЮЧ"
+export OPENAI_BASE_URL="https://routerai.ru/api/v1"  # если используете RouterAI
+export EMBEDDING_MODEL="openai/text-embedding-3-large"  # для RouterAI
+# Windows (PowerShell):
+# setx OPENAI_API_KEY "ВАШ_КЛЮЧ"
+# setx OPENAI_BASE_URL "https://routerai.ru/api/v1"
+# setx EMBEDDING_MODEL "openai/text-embedding-3-large"
 ```
 
 ## 2) Куда положить субтитры
@@ -58,6 +64,18 @@ python -m app.search "кажется, дела идут не очень хоро
 
 ```bash
 python -m app.search "кажется, дела идут не очень хорошо?" --paraphrase
+```
+
+Рекомендованный режим для более точных и уникальных цитат:
+
+```bash
+python -m app.search "кажется, дела идут не очень хорошо?" --top-k 5 --record-type line_window
+```
+
+Если хотите перефразы (нужна chat-модель у провайдера):
+
+```bash
+python -m app.search "кажется, дела идут не очень хорошо?" --paraphrase --paraphrase-model openai/gpt-4o-mini
 ```
 
 Фильтры:

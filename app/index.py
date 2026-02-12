@@ -7,8 +7,6 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
 import chromadb
-from openai import OpenAI
-
 from app.config import (
     CHROMA_COLLECTION,
     EMBEDDING_MODEL,
@@ -18,6 +16,7 @@ from app.config import (
     SCENE_MIN_SECONDS,
     SUBTITLE_DIR,
 )
+from app.llm_client import build_openai_client
 from app.subtitle_parser import SubtitleEntry, parse_subtitle_file
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -154,7 +153,7 @@ def iter_subtitle_files(root: Path) -> List[Path]:
     )
 
 
-def embed_texts(client: OpenAI, texts: List[str]) -> List[List[float]]:
+def embed_texts(client, texts: List[str]) -> List[List[float]]:
     response = client.embeddings.create(model=EMBEDDING_MODEL, input=texts)
     return [item.embedding for item in response.data]
 
@@ -164,7 +163,7 @@ def index_records(records: List[Record], batch_size: int) -> None:
         logging.info("No records to index.")
         return
     INDEX_DIR.mkdir(parents=True, exist_ok=True)
-    client = OpenAI()
+    client = build_openai_client()
     chroma = chromadb.PersistentClient(path=str(INDEX_DIR))
     collection = chroma.get_or_create_collection(name=CHROMA_COLLECTION)
 
