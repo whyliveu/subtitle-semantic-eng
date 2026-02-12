@@ -87,14 +87,14 @@ def quote_quality_bonus(quote: str) -> float:
 def query_index(
     collection: chromadb.Collection,
     query_embeddings: List[List[float]],
-    top_k: int,
+    candidate_k: int,
     filters: Optional[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
     results_by_id: Dict[str, Dict[str, Any]] = {}
 
     response = collection.query(
         query_embeddings=query_embeddings,
-        n_results=max(top_k, 20),
+        n_results=max(candidate_k, 20),
         where=filters or None,
         include=["documents", "metadatas", "distances"],
     )
@@ -300,6 +300,12 @@ def main() -> None:
         help="Disable decade diversification of final results.",
     )
     parser.add_argument(
+        "--candidate-k",
+        type=int,
+        default=200,
+        help="How many candidate records to fetch before diversification.",
+    )
+    parser.add_argument(
         "--export",
         type=Path,
         help="Export results to .md or .csv file.",
@@ -331,13 +337,26 @@ def main() -> None:
 
     embeddings = embed_queries(client, queries)
     filters = build_filters(args)
-    ranked = query_index(collection, embeddings, args.top_k, filters)
+    ranked = query_index(collection, embeddings, args.candidate_k, filters)
     results = select_unique_results(
         ranked,
         args.top_k,
         unique_movies=not args.allow_same_movie,
         diverse_periods=not args.no_diverse_periods,
     )
+
+    # If diversification cannot fill top-k, retry with wider candidate pool.
+    if len(results) < args.top_k and not args.allow_same_movie:
+        expanded_k = min(max(args.candidate_k * 5, 500), 5000)
+        if expanded_k > args.candidate_k:
+            logging.info("Expanding candidate pool: %s -> %s", args.candidate_k, expanded_k)
+            ranked_expanded = query_index(collection, embeddings, expanded_k, filters)
+            results = select_unique_results(
+                ranked_expanded,
+                args.top_k,
+                unique_movies=True,
+                diverse_periods=not args.no_diverse_periods,
+            )
 
     if not results:
         logging.info("No results found.")
