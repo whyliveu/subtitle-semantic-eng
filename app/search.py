@@ -127,32 +127,72 @@ def normalize_quote(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").strip().lower())
 
 
+
+
+def get_year_int(meta: Dict[str, Any]) -> Optional[int]:
+    raw = (meta.get("year") or "").strip()
+    if raw.isdigit() and len(raw) == 4:
+        return int(raw)
+    return None
+
+
+def get_decade(meta: Dict[str, Any]) -> Optional[int]:
+    year = get_year_int(meta)
+    if year is None:
+        return None
+    return (year // 10) * 10
+
 def select_unique_results(
     ranked: List[Dict[str, Any]],
     top_k: int,
     unique_movies: bool,
+    diverse_periods: bool,
 ) -> List[Dict[str, Any]]:
     selected: List[Dict[str, Any]] = []
     seen_quotes = set()
     seen_movies = set()
+    seen_decades = set()
 
-    for item in ranked:
+    def can_accept(item: Dict[str, Any], strict_decade: bool) -> bool:
         meta = item.get("metadata") or {}
         quote_key = normalize_quote(meta.get("line_text", ""))
         movie_key = (meta.get("movie_title") or "").strip().lower()
+        decade = get_decade(meta)
 
         if not quote_key or quote_key in seen_quotes:
-            continue
+            return False
         if unique_movies and movie_key in seen_movies:
-            continue
+            return False
+        if strict_decade and diverse_periods and decade is not None and decade in seen_decades:
+            return False
+        return True
+
+    def accept(item: Dict[str, Any]) -> None:
+        meta = item.get("metadata") or {}
+        quote_key = normalize_quote(meta.get("line_text", ""))
+        movie_key = (meta.get("movie_title") or "").strip().lower()
+        decade = get_decade(meta)
 
         seen_quotes.add(quote_key)
         if unique_movies:
             seen_movies.add(movie_key)
+        if diverse_periods and decade is not None:
+            seen_decades.add(decade)
         selected.append(item)
 
-        if len(selected) >= top_k:
-            break
+    # Pass 1: maximize period diversity
+    for item in ranked:
+        if can_accept(item, strict_decade=True):
+            accept(item)
+            if len(selected) >= top_k:
+                return selected
+
+    # Pass 2: fill remaining slots while keeping movie uniqueness
+    for item in ranked:
+        if can_accept(item, strict_decade=False):
+            accept(item)
+            if len(selected) >= top_k:
+                break
 
     return selected
 
@@ -255,6 +295,11 @@ def main() -> None:
         help="Allow multiple final quotes from the same movie.",
     )
     parser.add_argument(
+        "--no-diverse-periods",
+        action="store_true",
+        help="Disable decade diversification of final results.",
+    )
+    parser.add_argument(
         "--export",
         type=Path,
         help="Export results to .md or .csv file.",
@@ -287,7 +332,12 @@ def main() -> None:
     embeddings = embed_queries(client, queries)
     filters = build_filters(args)
     ranked = query_index(collection, embeddings, args.top_k, filters)
-    results = select_unique_results(ranked, args.top_k, unique_movies=not args.allow_same_movie)
+    results = select_unique_results(
+        ranked,
+        args.top_k,
+        unique_movies=not args.allow_same_movie,
+        diverse_periods=not args.no_diverse_periods,
+    )
 
     if not results:
         logging.info("No results found.")
